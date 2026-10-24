@@ -134,8 +134,9 @@ ESPHome Dashboard; голосовой конвейер обслуживает п
 `yandexmini`, 6-светодиодное кольцо на I2C, усилитель через `tdm_state`, кнопки TALK/громкость/mute
 и программная громкость. Часов, датчика освещённости, Zigbee и файлов `ledconfigs` у неё нет,
 поэтому соответствующие сущности HA не создаются; светомузыка работает по спектру собственных
-динамиков. Подробности установки, отката и отличий — в
-[MINI.md](satellite/deploy/MINI.md).
+динамиков. Обновления Мини берутся из релизов этого форка (`devqcf/pulsar`), а не из upstream:
+armhf-бинарник upstream собран под glibc 2.30 и не запустится на glibc 2.23. Подробности
+установки, отката и отличий — в [MINI.md](satellite/deploy/MINI.md).
 
 ## Требования
 
@@ -158,7 +159,7 @@ ESPHome Dashboard; голосовой конвейер обслуживает п
 ## Установка
 
 Скачайте архив для своего компьютера из
-[последнего релиза](https://github.com/Morvex885/pulsar/releases/latest), распакуйте и запустите
+[последнего релиза](https://github.com/devqcf/pulsar/releases/latest), распакуйте и запустите
 `pulsar-install`.
 
 | Компьютер | Архив |
@@ -172,7 +173,7 @@ ESPHome Dashboard; голосовой конвейер обслуживает п
 Linux и macOS (подставьте имя своего архива):
 
 ```sh
-curl -fLO https://github.com/Morvex885/pulsar/releases/latest/download/pulsar-linux-amd64.tar.gz
+curl -fLO https://github.com/devqcf/pulsar/releases/latest/download/pulsar-linux-amd64.tar.gz
 tar -xzf pulsar-linux-amd64.tar.gz && cd pulsar
 ./pulsar-install                 # найти колонки в сети и выбрать, куда ставить
 ./pulsar-install 192.168.1.50    # или сразу по адресу
@@ -182,7 +183,7 @@ tar -xzf pulsar-linux-amd64.tar.gz && cd pulsar
 Windows (PowerShell или командная строка):
 
 ```bat
-curl.exe -fLO https://github.com/Morvex885/pulsar/releases/latest/download/pulsar-windows-amd64.zip
+curl.exe -fLO https://github.com/devqcf/pulsar/releases/latest/download/pulsar-windows-amd64.zip
 tar -xf pulsar-windows-amd64.zip
 cd pulsar
 .\pulsar-install.exe
@@ -239,7 +240,7 @@ ESPHome-устройство `yandex-midi-xxxxxx`, `yandex-lite2-xxxxxx` или 
 
 ### Обновление из Home Assistant
 
-Колонка сама проверяет [релизы](https://github.com/Morvex885/pulsar/releases) через минуту после
+Колонка сама проверяет [релизы](https://github.com/devqcf/pulsar/releases) через минуту после
 запуска и затем каждые 6 часов; проверить сразу — «Проверить наличие обновлений» в HA
 (`homeassistant.update_entity`). Учитываются только стабильные релизы (не пре-релизы). Когда
 выходит новая версия, сущность «Firmware» в HA показывает её со ссылкой на релиз; кнопка

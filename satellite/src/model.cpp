@@ -71,6 +71,8 @@ Model mini() {
   m.mute_input = "";
   m.action_key = 116;  // the "talk" key: KEY_POWER in the kernel, maind's talk button
   m.mute_key = 113;    // KEY_MUTE on the same keypad, no SW_MUTE_DEVICE switch
+  // This fork carries the Mini support; upstream armhf releases are built for glibc 2.30.
+  m.update_repo = "devqcf/pulsar";
   m.has_light_sensor = false;
   m.error_sound = "ru-RU/playback_error.mp3";
   // dmix over hw:0,0; defined in /data/pulsar/asound.conf and selected via ALSA_CONFIG_PATH.

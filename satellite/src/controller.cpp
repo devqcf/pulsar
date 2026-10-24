@@ -40,8 +40,8 @@ constexpr uint16_t kSendspinPort = 8928;
 // network Zigbee coordinators conventionally use.
 constexpr uint16_t kZigbeePort = 6638;
 // Updates: releases of this repository on GitHub. The first check waits for the network after
-// boot; an automatic install waits until the speaker is idle (it restarts the daemon).
-constexpr const char *kUpdateRepo = "Morvex885/pulsar";
+// boot; an automatic install waits until the speaker is idle (it restarts the daemon). The
+// repository is per model: the Mini fork has its own armhf/glibc 2.23 builds.
 constexpr int64_t kUpdateFirstCheckMs = 60'000;
 constexpr int64_t kUpdateCheckPeriodMs = 6 * 3600'000LL;
 constexpr int64_t kUpdateIdleRetryMs = 10 * 60'000;
@@ -146,7 +146,7 @@ Controller::Controller(Loop &loop, const Model &model, const std::string &state_
       input_(loop, model),
       light_(loop),
       arbiter_(loop),
-      updater_(loop, kUpdateRepo, PULSAR_VERSION) {}
+      updater_(loop, model.update_repo, PULSAR_VERSION) {}
 
 Controller::~Controller() = default;
 

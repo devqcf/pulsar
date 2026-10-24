@@ -53,6 +53,9 @@ struct Model {
   int mute_key = 0;                    // KEY_MUTE on a keypad without a SW_MUTE_DEVICE switch
   bool has_light_sensor = true;        // ltr308als01 IIO ambient light sensor
   std::string error_sound;             // relative to /system/vendor/quasar/sounds/
+  // GitHub owner/repo for the daemon's release check. The Mini must not take upstream armhf
+  // binaries: they target glibc 2.30, not the Mini's 2.23 (and do not know its hardware).
+  std::string update_repo = "Morvex885/pulsar";
 
   // GStreamer alsasink device for playback (e.g. "speakers" or "hw:0,0"). No ALSA softvol is
   // exposed on every model, so the master volume can instead be applied to the player channels.
