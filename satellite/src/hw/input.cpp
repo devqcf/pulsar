@@ -1,6 +1,7 @@
 // Buttons via evdev (devices matched by name in /proc/bus/input/devices, names per Model).
 // Station Midi: touch keys "awinic_sar", mute switch "mute"; Station Lite 2: touch keys "aw9610x",
-// mute switch "gpio-keys". Both use the same key codes and switch:
+// mute switch "gpio-keys"; Station Mini: one "adc_keypad" with talk/volume/mute keys and no switch.
+// The Midi/Lite 2 use the same key codes and switch:
 //
 // touch keys (capacitive, EV_KEY only; Midi KEY bitmap "40 0 0 0 0 0 0 0 c000000000000 0"):
 //   KEY_VOICECOMMAND (582) -> ACTION   (maind: "ACTIVATE")
@@ -9,7 +10,8 @@
 // mute switch (gpio-keys, KEY bitmap bit 113 KEY_MUTE, SW bitmap 0x4000 = SW_MUTE_DEVICE (14)):
 //   the hardware microphone mute slider/toggle; SW_MUTE_DEVICE=1 means muted. Its KEY_MUTE
 //   press/release events are ignored, the switch state is authoritative (initial value via
-//   EVIOCGSW).
+//   EVIOCGSW). The Mini has no switch but a momentary KEY_MUTE on its keypad: each press toggles
+//   the same software mute state.
 // ACTION: SHORT on release before 800 ms, LONG as soon as it has been held for 800 ms.
 // VOLUME_*: SHORT on press, auto-repeated every 200 ms after being held for 500 ms, for at most 10 s.
 // Devices that disappear (ENODEV) are looked up again every 3 s; SYN_DROPPED triggers a state resync.
@@ -31,7 +33,6 @@ namespace cs {
 
 namespace {
 
-constexpr int kKeyAction = 582;  // KEY_VOICECOMMAND
 constexpr int64_t kLongPressMs = 800;
 constexpr int64_t kRepeatDelayMs = 500;
 constexpr int64_t kRepeatMs = 200;
@@ -121,7 +122,7 @@ struct Input::Impl {
   }
 
   void on_key(int code, int value) {
-    if (code == kKeyAction) {
+    if (code == model.action_key) {
       if (value == 1 && !action_down) {
         action_down = Loop::now_ms();
         action_long_sent = false;
@@ -153,6 +154,10 @@ struct Input::Impl {
         last_action_ms = now;
         emit(Button::ACTION, Press::SHORT);
       }
+      return;
+    }
+    if (model.mute_key && code == model.mute_key) {
+      if (value == 1) set_muted(!muted);
       return;
     }
     if (code != KEY_VOLUMEUP && code != KEY_VOLUMEDOWN) {
@@ -207,7 +212,7 @@ struct Input::Impl {
       release_all();
       return;
     }
-    if (action_down && !test_bit(keys, kKeyAction)) on_key(kKeyAction, 0);
+    if (action_down && !test_bit(keys, model.action_key)) on_key(model.action_key, 0);
     if (repeat_code && !test_bit(keys, repeat_code)) on_key(repeat_code, 0);
   }
 
@@ -250,6 +255,7 @@ struct Input::Impl {
   }
 
   int open_dev(const std::string &name, bool quiet) {
+    if (name.empty()) return -1;
     std::string path = find_event_dev(name);
     if (path.empty()) {
       if (!quiet) LOGE("input: device \"%s\" not found", name.c_str());
@@ -271,7 +277,7 @@ struct Input::Impl {
       keys_fd = open_dev(model.keys_input, true);
       keys_dropped = false;
     }
-    if (mute_fd < 0) {
+    if (mute_fd < 0 && !model.mute_input.empty()) {
       mute_fd = open_dev(model.mute_input, true);
       mute_dropped = false;
       if (mute_fd >= 0) read_mute_state();

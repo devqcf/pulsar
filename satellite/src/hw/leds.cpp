@@ -1,4 +1,5 @@
-// LED ring (+ logo) of the Station Midi (24 + 6 RGB) and Lite 2 (3 RGB, no logo); layout per Model.
+// LED ring (+ logo) of the Station Midi (24 + 6 RGB), Lite 2 (3 RGB) and Mini (6 RGB); layout per
+// Model.
 //
 // How the hardware is driven: the LEDs sit behind kernel LED triggers that expose them as
 // framebuffers (Midi: "ledfb-ring"/"ledfb-logo" -> /dev/fb0 "ring" 24x1, /dev/fb1 "logo" 6x1;
@@ -21,6 +22,8 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <linux/fb.h>
+#include <linux/i2c-dev.h>
+#include <linux/i2c.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 
@@ -83,6 +86,7 @@ struct Leds::Impl {
 
   // output
   int fb_ring = -1, fb_logo = -1;
+  int i2c_fd = -1, i2c_addr = 0;
   fb_var_screeninfo var_ring{}, var_logo{};
   std::vector<int> sysfs_fds;  // fallback: [ring r,g,b x n][logo r,g,b x nlogo]
   std::vector<uint8_t> last;
@@ -146,6 +150,7 @@ struct Leds::Impl {
     clear();  // do not leave the last frame lit after the daemon exits
     if (fb_ring >= 0) close(fb_ring);
     if (fb_logo >= 0) close(fb_logo);
+    if (i2c_fd >= 0) close(i2c_fd);
     for (int fd : sysfs_fds)
       if (fd >= 0) close(fd);
   }
@@ -179,6 +184,40 @@ struct Leds::Impl {
     }
     ioctl(fd, FBIOGET_VSCREENINFO, &var);
     return fd;
+  }
+
+  // IS31FL3236-compatible controller: register 0x01 + 18 BGR bytes, then 0x25=0xAA latches the
+  // frame; 0x26..0x37 are the per-channel current settings and 0x4B enables the output stage.
+  bool i2c_cmd(uint8_t reg, const uint8_t *data, size_t len) {
+    if (i2c_fd < 0 || len > 31) return false;
+    uint8_t buf[32];
+    buf[0] = reg;
+    memcpy(buf + 1, data, len);
+    i2c_msg msg = {.addr = uint16_t(i2c_addr), .flags = 0, .len = uint16_t(len + 1), .buf = buf};
+    i2c_rdwr_ioctl_data xfer = {.msgs = &msg, .nmsgs = 1};
+    return ioctl(i2c_fd, I2C_RDWR, &xfer) >= 0;
+  }
+
+  bool open_i2c() {
+    if (n != 6 || nlogo) {
+      LOGW("leds: i2c backend expects 6 ring LEDs and no logo (%d + %d)", n, nlogo);
+      return false;
+    }
+    i2c_fd = ::open(model.ring.i2c_dev.c_str(), O_RDWR | O_CLOEXEC);
+    if (i2c_fd < 0) {
+      LOGW("leds: open %s: %s", model.ring.i2c_dev.c_str(), strerror(errno));
+      return false;
+    }
+    i2c_addr = model.ring.i2c_addr;
+    uint8_t on = 1, imax[18];
+    memset(imax, 3, sizeof imax);
+    if (!i2c_cmd(0x00, &on, 1) || !i2c_cmd(0x26, imax, sizeof imax) || !i2c_cmd(0x4b, &on, 1)) {
+      LOGW("leds: init %s@0x%02x: %s", model.ring.i2c_dev.c_str(), i2c_addr, strerror(errno));
+      close(i2c_fd);
+      i2c_fd = -1;
+      return false;
+    }
+    return true;
   }
 
   bool open_fb() {
@@ -260,7 +299,18 @@ struct Leds::Impl {
     std::vector<uint8_t> px(size_t(n + nlogo) * 3);
     for (int i = 0; i < n + nlogo; i++) to_px(frame[i], &px[size_t(i) * 3]);
     const bool have_last = !last.empty();
-    if (fb_ring >= 0) {
+    if (i2c_fd >= 0) {
+      if (!have_last || memcmp(px.data(), last.data(), size_t(n) * 3) != 0) {
+        uint8_t bgr[18];
+        for (int i = 0; i < n; i++) {
+          bgr[i * 3] = px[i * 3 + 2];
+          bgr[i * 3 + 1] = px[i * 3 + 1];
+          bgr[i * 3 + 2] = px[i * 3];
+        }
+        uint8_t latch = 0xaa;
+        if (!i2c_cmd(0x01, bgr, sizeof bgr) || !i2c_cmd(0x25, &latch, 1)) warn_write(0, "i2c");
+      }
+    } else if (fb_ring >= 0) {
       if (!have_last || memcmp(px.data(), last.data(), size_t(n) * 3) != 0)
         write_fb(fb_ring, var_ring, px.data(), n, 0, "ring fb");
       if (fb_logo >= 0 && (!have_last || memcmp(px.data() + n * 3, last.data() + n * 3, size_t(nlogo) * 3) != 0))
@@ -481,7 +531,10 @@ Leds::~Leds() = default;
 
 bool Leds::open() {
   auto &d = *impl_;
-  if (d.open_fb()) {
+  if (!d.model.ring.i2c_dev.empty()) {
+    if (!d.open_i2c()) return false;
+    LOGI("leds: driving %d ring LEDs via i2c %s@0x%02x", d.n, d.model.ring.i2c_dev.c_str(), d.model.ring.i2c_addr);
+  } else if (d.open_fb()) {
     LOGI("leds: driving %d ring + %d logo LEDs via framebuffer", d.n, d.nlogo);
   } else if (d.open_sysfs()) {
     LOGI("leds: driving %d ring + %d logo LEDs via sysfs brightness", d.n, d.nlogo);

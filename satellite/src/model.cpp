@@ -24,8 +24,8 @@ Model midi() {
   m.spk_channels = {4, 5, 6, 7};
   m.vqe_preset = "cucumber";
   m.led_prefix = "cucumber";
-  m.ring = {24, 0, "/dev/fb0", "ring", "ledfb-ring", "ring"};
-  m.logo = {6, 0, "/dev/fb1", "logo", "ledfb-logo", "logo"};
+  m.ring = {24, 0, "/dev/fb0", "ring", "ledfb-ring", "ring", "", 0};
+  m.logo = {6, 0, "/dev/fb1", "logo", "ledfb-logo", "logo", "", 0};
   m.clock_dir = "/sys/class/leds/cucumber:white:clock-";
   m.clock_seg_base = 'a';
   m.clock_pos_base = 1;
@@ -47,6 +47,45 @@ Model midi() {
   return m;
 }
 
+// Station Mini (first generation): 32-bit userland, 4 PDM mics (capture channels 0..3) and two
+// speaker references (channels 6 and 7) at 48 kHz on hw:0,2. Channels 4/5 carry a large DC offset
+// (the "micUnknownChannels" of quasar.cfg) and are not fed to the VQE. Playback is hw:0,0: it is
+// the only output with the speaker loopback on channels 6/7. The ring is six RGB LEDs behind an
+// IS31FL3236-compatible controller at i2c-0/0x3c (no framebuffer, no clock).
+Model mini() {
+  Model m;
+  m.codename = "yandexmini";
+  m.host_prefix = "yandex-mini-";
+  m.friendly_name = "Яндекс Станция Мини";
+  m.model_name = "Yandex Station Mini";
+  m.capture_pcm = "hw:0,2";
+  m.capture_rate = 48000;
+  m.capture_channels = 8;
+  m.capture_bits = 32;
+  m.mic_channels = {0, 1, 2, 3};
+  m.spk_channels = {6, 7};
+  m.vqe_preset = "yandexmini";
+  m.led_prefix = "";
+  m.ring = {6, 0, "", "", "", "", "/dev/i2c-0", 0x3c};
+  m.keys_input = "adc_keypad";
+  m.mute_input = "";
+  m.action_key = 116;  // the "talk" key: KEY_POWER in the kernel, maind's talk button
+  m.mute_key = 113;    // KEY_MUTE on the same keypad, no SW_MUTE_DEVICE switch
+  m.has_light_sensor = false;
+  m.error_sound = "ru-RU/playback_error.mp3";
+  // dmix over hw:0,0; defined in /data/pulsar/asound.conf and selected via ALSA_CONFIG_PATH.
+  m.playback_sink = "mini";
+  // No softvol "speakers" PCM and the hardware "Master" control does not attenuate the output;
+  // Controller applies the volume to the GStreamer player channels instead.
+  m.software_volume = true;
+  m.spk_mute_ctl = "SPK mute";
+  // The stock maind opens the tdm_state amplifier gates; without them the ALSA sink runs but the
+  // speaker stays silent (SPK mute cannot be cleared while amp_table is 0).
+  m.amp_enable_paths = {"/sys/class/tdm_state/amp_table", "/sys/class/tdm_state/aux_amp"};
+  m.volume_map = {{0, 0}, {1, 1}, {20, 20}};
+  return m;
+}
+
 // Station Lite 2: 32-bit userland, 2 PDM mics (capture channels 0 and 2) + speaker feedback
 // (channel 6) at 48 kHz on hw:0,1 (layout of multi_capture_raw in /etc/asound.conf), 3-LED ring,
 // clock LEDs "plum:white:clock<A..H><0..3>" + DH/DL (colon), DM, DEGREE (quasar.cfg /leds/clock).
@@ -63,7 +102,7 @@ Model lite2() {
   m.spk_channels = {6};
   m.vqe_preset = "plum";
   m.led_prefix = "plum";
-  m.ring = {3, 1, "/dev/fb0", "YNDX LED ring", "led_ring_fb", "ring"};
+  m.ring = {3, 1, "/dev/fb0", "YNDX LED ring", "led_ring_fb", "ring", "", 0};
   m.clock_dir = "/sys/class/leds/plum:white:clock";
   m.clock_seg_base = 'A';
   m.clock_pos_base = 0;
@@ -91,9 +130,14 @@ const Model *detect_model() {
       if (entry == "yandex,cucumber") return new Model(midi());
       if (entry == "yandex,plum") return new Model(lite2());
     }
+    // The Mini's devicetree has no yandex,* entry; its board id is the only stable marker.
+    std::ifstream dt("/proc/device-tree/amlogic-dt-id", std::ios::binary);
+    std::string dt_id((std::istreambuf_iterator<char>(dt)), std::istreambuf_iterator<char>());
+    dt_id = dt_id.c_str();
+    if (dt_id == "axg_s420_v03") return new Model(mini());
     for (char &c : compat)
       if (c == '\0') c = ' ';
-    LOGE("unsupported device (devicetree compatible: %s)", compat.c_str());
+    LOGE("unsupported device (devicetree compatible: %s, amlogic-dt-id: '%s')", compat.c_str(), dt_id.c_str());
     return nullptr;
   }();
   return model;

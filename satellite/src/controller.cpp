@@ -139,7 +139,7 @@ Controller::Controller(Loop &loop, const Model &model, const std::string &state_
       model_(model),
       state_path_(state_path),
       mic_(loop, model),
-      player_(loop),
+      player_(loop, model),
       mixer_(model),
       leds_(loop, model),
       clock_(loop, model),
@@ -180,12 +180,18 @@ bool Controller::start() {
   cfg.active_wake_words = {st_.wake_word};
   cfg.light_effects = Leds::effect_names();
   cfg.music_styles = Leds::music_styles();
-  cfg.clock_music_styles = Clock::music_styles();
+  cfg.has_clock = !model_.clock_dir.empty();
+  cfg.has_light_sensor = model_.has_light_sensor;
+  cfg.has_hw_mic_mute = !model_.mute_input.empty() || model_.mute_key != 0;
+  cfg.has_buttons = !model_.keys_input.empty();
   cfg.case_colors = {"None"};
   const auto case_colors = Leds::case_colors();
   cfg.case_colors.insert(cfg.case_colors.end(), case_colors.begin(), case_colors.end());
-  cfg.clock_faces = {"None"};
-  cfg.clock_faces.insert(cfg.clock_faces.end(), Clock::face_names().begin(), Clock::face_names().end());
+  if (cfg.has_clock) {
+    cfg.clock_music_styles = Clock::music_styles();
+    cfg.clock_faces = {"None"};
+    cfg.clock_faces.insert(cfg.clock_faces.end(), Clock::face_names().begin(), Clock::face_names().end());
+  }
   const auto slash = state_path_.rfind('/');
   cfg.key_path = (slash == std::string::npos ? std::string(".") : state_path_.substr(0, slash)) + "/api_key";
   if (!model_.zigbee_tty.empty())
@@ -195,12 +201,14 @@ bool Controller::start() {
 
   // Hardware first: UI feedback should work even if HA is not connected.
   if (!leds_.open()) LOGW("LEDs unavailable");
-  if (!clock_.open()) LOGW("clock unavailable");
-  clock_.set_enabled(st_.clock_on);
-  clock_.set_brightness(st_.clock_brightness);
-  clock_.set_scroll_ms(st_.clock_scroll_ms);
-  clock_.set_voice_indication(st_.voice_indication);
-  clock_.set_music_style(st_.clock_music);
+  if (cfg.has_clock) {
+    if (!clock_.open()) LOGW("clock unavailable");
+    clock_.set_enabled(st_.clock_on);
+    clock_.set_brightness(st_.clock_brightness);
+    clock_.set_scroll_ms(st_.clock_scroll_ms);
+    clock_.set_voice_indication(st_.voice_indication);
+    clock_.set_music_style(st_.clock_music);
+  }
   leds_.set_speed(st_.led_speed);
   leds_.set_voice_indication(st_.voice_indication);
   leds_.set_music_style(st_.music_viz);
@@ -216,10 +224,12 @@ bool Controller::start() {
     LOGI("volume %.3f from an earlier build -> %.3f", st_.volume_legacy, st_.volume);
     persist();
   } else {
-    // No volume saved: keep the one the speaker already had, but never start loud: on the Lite 2
-    // the softvol control is at 0 dB (100 %) after boot until the Yandex stack sets it. 0.3 is
-    // stock level 6 of 20 (Alice's "3").
-    st_.volume = std::min(mixer_.volume(), 0.3f);
+    // No volume saved: keep the one the speaker already had, but never start loud. On the Lite 2
+    // the softvol control is at 0 dB (100 %) after boot until the Yandex stack sets it; 0.3 is
+    // stock level 6 of 20 (Alice's "3"). The Mini has no hardware attenuation at all, so start
+    // much lower and persist it: its full-scale output is far louder than the stock level 6.
+    st_.volume = std::min(mixer_.volume(), model_.software_volume ? 0.1f : 0.3f);
+    if (model_.software_volume) persist();
   }
   mixer_.set_volume(st_.volume);
   mixer_.set_muted(st_.muted);
@@ -287,7 +297,7 @@ bool Controller::start() {
     LOGW("input devices unavailable");
   }
 
-  if (light_.open()) {
+  if (model_.has_light_sensor && light_.open()) {
     light_.on_lux([this](float lux) {
       clock_.set_ambient_lux(lux);
       leds_.set_ambient_lux(lux);
@@ -827,12 +837,17 @@ void Controller::update_duck() {
 }
 
 // Mute: softvol raw 0 is the bottom of its dB range (-60 dB on the Midi), still audible, so mute
-// also zeroes the software gains of both playback channels and Sendspin.
+// also zeroes the software gains of both playback channels and Sendspin. On models without a usable
+// ALSA master (the Mini) this is also where the master volume itself is applied.
 void Controller::apply_gains() {
-  const float music = st_.muted ? 0.0f : ducked_ ? kDuckGain : 1.0f;
+  const float master = model_.software_volume ? st_.volume : 1.0f;
+  const float music = st_.muted ? 0.0f : master * (ducked_ ? kDuckGain : 1.0f);
   player_.set_channel_gain(Channel::MUSIC, music);
-  player_.set_channel_gain(Channel::ANNOUNCE, st_.muted ? 0.0f : 1.0f);
-  if (sendspin_) sendspin_->set_duck_gain(music);
+  player_.set_channel_gain(Channel::ANNOUNCE, st_.muted ? 0.0f : master);
+  // Sendspin has no hardware master either on the Mini; apply the software master to its local
+  // sink as well (the server is told the same volume, but must not be the only attenuation).
+  const float sendspin = st_.muted ? 0.0f : ducked_ ? kDuckGain : 1.0f;
+  if (sendspin_) sendspin_->set_duck_gain(sendspin * (model_.software_volume ? st_.volume : 1.0f));
 }
 
 void Controller::start_sendspin(const DeviceIdentity &id) {
@@ -844,6 +859,9 @@ void Controller::start_sendspin(const DeviceIdentity &id) {
   for (char c : id.mac) cfg.mac += char(tolower(c));
   auto slash = state_path_.rfind('/');
   cfg.state_dir = (slash == std::string::npos ? std::string(".") : state_path_.substr(0, slash)) + "/sendspin";
+  cfg.pcm = model_.playback_sink;
+  cfg.spk_mute_ctl = model_.spk_mute_ctl;
+  cfg.amp_enable_paths = model_.amp_enable_paths;
   cfg.port = kSendspinPort;
 
   SendspinService::Hooks h;
@@ -921,8 +939,8 @@ void Controller::set_volume(float v, bool feedback) {
   if (st_.muted && feedback) {
     st_.muted = false;
     mixer_.set_muted(false);
-    apply_gains();
   }
+  apply_gains();  // software master on the Mini; on other models this also undoes a mute
   if (feedback) {
     leds_.show_volume(st_.volume);
     clock_.flash_number(int(st_.volume * 100 + 0.5f));

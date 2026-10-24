@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
     system("amixer -c0 cget name='Master Playback Volume' | grep ': values'");
   }
 
-  Player player(loop);
+  Player player(loop, *model);
   if (!player.init()) {
     printf("player init failed\n");
     return 1;
@@ -57,8 +57,10 @@ int main(int argc, char **argv) {
     printf("[%6.2f] state %s -> %s\n", ts(), ch == Channel::MUSIC ? "MUSIC" : "ANNOUNCE", sname(s));
     fflush(stdout);
   });
-  player.set_channel_gain(Channel::MUSIC, 0.3f);
-  player.set_channel_gain(Channel::ANNOUNCE, 0.3f);
+  // PULSAR_TEST_GAIN=0 exercises playback state/EOS without audible output.
+  const float test_gain = getenv("PULSAR_TEST_GAIN") ? strtof(getenv("PULSAR_TEST_GAIN"), nullptr) : 0.3f;
+  player.set_channel_gain(Channel::MUSIC, test_gain);
+  player.set_channel_gain(Channel::ANNOUNCE, test_gain);
 
   auto phase_https = [&] {
     if (https.empty()) {
@@ -96,10 +98,10 @@ int main(int argc, char **argv) {
   });
   loop.add_timer(1500, [&] {
     printf("[%6.2f] == ANNOUNCE [%s, %s/announce.flac], duck music\n", ts(), announce.c_str(), http.c_str());
-    player.set_channel_gain(Channel::MUSIC, 0.08f);
+    player.set_channel_gain(Channel::MUSIC, test_gain * 0.27f);
     player.play(Channel::ANNOUNCE, {announce, http + "/announce.flac"}, [&](bool ok) {
       printf("[%6.2f] announce done ok=%d, unduck\n", ts(), ok);
-      player.set_channel_gain(Channel::MUSIC, 0.3f);
+      player.set_channel_gain(Channel::MUSIC, test_gain);
       loop.add_timer(500, [&] {
         printf("[%6.2f] == pause MUSIC\n", ts());
         player.pause(Channel::MUSIC);

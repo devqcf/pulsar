@@ -174,6 +174,10 @@ struct ApiConfig {
   std::vector<std::string> clock_music_styles;    // Select «Clock music» options
   // Select «Zigbee role» options; empty: no Zigbee entities (no radio).
   std::vector<std::string> zigbee_modes;
+  bool has_clock = true;                          // 7-segment display and its entities
+  bool has_light_sensor = true;                   // ltr308als01 illuminance entity
+  bool has_hw_mic_mute = true;                    // hardware mic-mute switch input
+  bool has_buttons = true;                        // physical keys: Button event entity
   // File holding the Noise encryption key (base64 of 32 bytes, as in ESPHome's api: encryption:
   // key). Missing/empty file: plaintext (and all-zeros-key provisioning). HA may set or rotate it
   // with NoiseEncryptionSetKeyRequest. Empty path: encryption unsupported.

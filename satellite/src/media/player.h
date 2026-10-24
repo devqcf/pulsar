@@ -1,6 +1,6 @@
 // Audio playback through the GStreamer build bundled with the Yandex firmware
 // (/system/vendor/quasar/libs/libquasar_gstreamer.so, loaded with dlopen) into
-// the ALSA "speakers" PCM (dmix + softvol). Two independent channels:
+// the model's ALSA playback sink ("speakers" dmix+softvol, or a Mini dmix). Two independent channels:
 //   MUSIC    - media_player content, can be paused/ducked.
 //   ANNOUNCE - TTS, announcements, earcons; plays over (ducked) music.
 // Public methods are thread-safe; callbacks are delivered on the Loop thread.
@@ -28,7 +28,7 @@ class Player {
   using DoneCb = std::function<void(bool ok)>;
   using StateCb = std::function<void(Channel, PlayState)>;
 
-  explicit Player(Loop &loop);
+  explicit Player(Loop &loop, const Model &model);
   ~Player();
   bool init();  // dlopen + gst_init + static plugin registration + GMainLoop thread
 
@@ -52,6 +52,8 @@ class Player {
 
 // Master output volume via ALSA control "Master Playback Volume" (softvol of the "speakers" PCM),
 // on the stock curve of the model (Model::volume_map): volume v is platform level v * top level.
+// Models with Model::software_volume have no usable ALSA control; the Controller then applies the
+// master to the player channel gains and Mixer only stores the value.
 class Mixer {
  public:
   explicit Mixer(const Model &model) : model_(model) {}

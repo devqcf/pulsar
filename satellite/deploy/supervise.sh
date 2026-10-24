@@ -15,6 +15,16 @@ D=${PULSAR_DIR:-/data/pulsar}
 LOG=${PULSAR_LOG:-/tmp/pulsar.log}
 Q=${PULSAR_Q:-/system/vendor/quasar/q}
 BIN=$D/pulsar
+# The Mini keeps alsa-lib only under /system/vendor/quasar/libs (the Midi/Lite 2 have it in /usr/lib).
+if [ -d /system/vendor/quasar/libs ]; then
+  LD_LIBRARY_PATH=/system/vendor/quasar/libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+  export LD_LIBRARY_PATH
+fi
+# Mini has no usable /etc/asound.conf playback PCM; its dmix definition is installed here.
+if [ -f "$D/asound.conf" ]; then
+  ALSA_CONFIG_PATH=$D/asound.conf
+  export ALSA_CONFIG_PATH
+fi
 MAXLOG=1000000
 LONG=${PULSAR_LONG:-300}
 CRASHES=5

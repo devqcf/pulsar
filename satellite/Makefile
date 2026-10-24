@@ -1,7 +1,7 @@
 # Cross-build for Yandex Stations with zig: one binary per userland ABI.
 #   ARCH=aarch64  64-bit userspace (Station Midi, glibc 2.36)
-#   ARCH=armhf    32-bit userspace (Station Lite 2, glibc 2.30; also Midi images with an armhf
-#                  userland)
+#   ARCH=armhf    32-bit userspace (Station Lite 2, glibc 2.30; Station Mini, glibc 2.23;
+#                  also Midi images with an armhf userland)
 # `make` builds both; `make ARCH=armhf` one of them. Output: build/<arch>/pulsar.
 #
 # The Sendspin player links sendspin-cpp and its dependencies statically. They are fetched once
@@ -36,7 +36,7 @@ CPU    :=
 HOST   := aarch64-linux-gnu
 ALSA   :=
 else ifeq ($(ARCH),armhf)
-TARGET := arm-linux-gnueabihf.2.30
+TARGET := arm-linux-gnueabihf.2.23
 CPU    := -mcpu=cortex_a53
 HOST   := arm-linux-gnueabihf
 ALSA   := --with-versioned=no
@@ -98,7 +98,8 @@ $(BUILD)/pulsar.debug: $(OBJS) $(SS_STAMP)
 	$(CXX) $(OBJS) -o $@ $(LDFLAGS)
 
 $(BUILD)/pulsar: $(BUILD)/pulsar.debug
-	$(ZIG) objcopy --strip-all $< $@
+	@# zig objcopy is broken on some hosts (undefined host libc symbols); relink stripped instead.
+	$(ZIG) objcopy --strip-all $< $@ 2>/dev/null || { rm -f $@; $(CXX) $(OBJS) -o $@ $(LDFLAGS) -Wl,--strip-all; }
 
 $(BUILD)/%.o: src/%.cpp | $(SS_STAMP) $(SYSROOT_STAMP)
 	@mkdir -p $(dir $@)

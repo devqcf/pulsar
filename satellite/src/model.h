@@ -1,5 +1,6 @@
 // Per-model hardware description of the supported Yandex Stations. The model is detected once
-// from the devicetree ("yandex,<codename>" in /proc/device-tree/compatible).
+// from the devicetree ("yandex,<codename>" in /proc/device-tree/compatible), with the Mini's
+// board id (/proc/device-tree/amlogic-dt-id = axg_s420_v03) as a fallback.
 #pragma once
 
 #include <cstdint>
@@ -14,14 +15,16 @@ struct Model {
   std::string friendly_name;  // shown in Home Assistant / Music Assistant
   std::string model_name;
 
-  // Capture: interleaved S16 frames from capture_pcm; VQE gets mic_channels / spk_channels.
+  // Capture: interleaved samples from capture_pcm, capture_bits per channel (S16_LE or S32_LE);
+  // VQE gets mic_channels / spk_channels.
   std::string capture_pcm;
-  unsigned capture_rate = 0, capture_channels = 0;
+  unsigned capture_rate = 0, capture_channels = 0, capture_bits = 16;
   std::vector<unsigned> mic_channels, spk_channels;
   std::string vqe_preset;
 
-  // LED ring (+ optional logo), each an Nx1 BGR framebuffer behind an ledfb trigger, with
-  // per-channel sysfs LEDs "<led_prefix>:<color>:<ring|logo><index>" as fallback.
+  // LED ring (+ optional logo), each either an Nx1 BGR framebuffer behind an ledfb trigger with
+  // per-channel sysfs LEDs "<led_prefix>:<color>:<ring|logo><index>" as fallback, or an IS31FL323x
+  // controller on an i2c bus ("i2c_dev" non-empty; 18 channels = 6 RGB pixels).
   struct LedStrip {
     int count = 0;
     int first_index = 0;      // sysfs numbering starts at 0 (Midi) or 1 (Lite 2)
@@ -29,6 +32,8 @@ struct Model {
     std::string fb_name;      // expected /sys/class/graphics/fbN/name
     std::string trigger;      // LED trigger that routes the framebuffer to the LEDs
     std::string sysfs_kind;   // "ring" / "logo"
+    std::string i2c_dev;      // "/dev/i2c-0"; empty: framebuffer/sysfs
+    int i2c_addr = 0;
   };
   std::string led_prefix;
   LedStrip ring, logo;        // logo.count == 0: no logo
@@ -43,8 +48,23 @@ struct Model {
   // false: dimming via the per-segment brightness value itself.
   bool clock_chip_current = true;
 
-  std::string keys_input, mute_input;  // evdev device names
+  std::string keys_input, mute_input;  // evdev device names; empty: absent
+  int action_key = 582;                // KEY_VOICECOMMAND; the Mini reports KEY_POWER (116)
+  int mute_key = 0;                    // KEY_MUTE on a keypad without a SW_MUTE_DEVICE switch
+  bool has_light_sensor = true;        // ltr308als01 IIO ambient light sensor
   std::string error_sound;             // relative to /system/vendor/quasar/sounds/
+
+  // GStreamer alsasink device for playback (e.g. "speakers" or "hw:0,0"). No ALSA softvol is
+  // exposed on every model, so the master volume can instead be applied to the player channels.
+  std::string playback_sink = "speakers";
+  bool software_volume = false;
+  // ALSA playback switch (on hw:0) that must be 1 (on) for the amplifier to pass audio. It can
+  // be left off after a playback PCM closes, so switch it on before starting playback. Empty: no
+  // such control.
+  std::string spk_mute_ctl;
+  // Sysfs switches that gate the speaker amplifier. They are written to "1" before a playback
+  // PCM is opened; the Mini needs /sys/class/tdm_state/amp_table and .../aux_amp. Empty: no gate.
+  std::vector<std::string> amp_enable_paths;
 
   // Stock volume curve: platform level -> raw value (0..255) of the softvol "Master Playback
   // Volume" on the speakers PCM, piecewise linear between the points; the first point is level 0

@@ -514,6 +514,7 @@ Clock::~Clock() = default;
 
 bool Clock::open() {
   auto &d = *impl_;
+  if (d.model.clock_dir.empty()) return false;
   int found = 0;
   for (int dig = 0; dig < kDigits; dig++)
     for (int s = 0; s < kSegs; s++) {

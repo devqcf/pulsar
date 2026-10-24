@@ -1,5 +1,5 @@
 // GStreamer playback via the firmware's libquasar_gstreamer.so (dlopen'ed, no headers) and the
-// ALSA softvol master control.
+// ALSA softvol master control, or software master gain on models without one.
 //
 // Library loading: libquasar_gstreamer.so has RUNPATH=/system/vendor/quasar/libs, but libglib.so
 // has none and NEEDs libiconv.so (which lives only in that directory). We dlopen libiconv.so,
@@ -31,6 +31,7 @@
 #include <thread>
 
 #include "core/log.h"
+#include "hw/spk_mute.h"
 
 namespace cs {
 
@@ -259,9 +260,10 @@ struct Player::Impl {
     std::atomic<PlayState> state{PlayState::IDLE};
   };
 
-  explicit Impl(Loop &l) : loop(l) {}
+  explicit Impl(Loop &l, const Model &m) : loop(l), model(m) {}
 
   Loop &loop;
+  const Model &model;
   void *glib = nullptr, *gst = nullptr;
   gp mainloop = nullptr;
   std::thread thread;
@@ -366,6 +368,8 @@ struct Player::Impl {
     c.reached_playing = false;
     c.started_ms = Loop::now_ms();
     set_state(c, c.want_play ? PlayState::LOADING : PlayState::PAUSED);
+    if (c.want_play) enable_amp(model.amp_enable_paths);
+    if (c.want_play) unmute_speaker(model.spk_mute_ctl);
     if (g.gst_element_set_state(c.pipe, c.want_play ? GST_STATE_PLAYING : GST_STATE_PAUSED) == GST_STATE_CHANGE_FAILURE) {
       LOGE("player: ch%d set_state failed for %s", int(c.id), uri.c_str());
       advance(c, false);
@@ -432,6 +436,8 @@ struct Player::Impl {
       return;
     }
     int st = (c.want_play && !c.buffering) ? GST_STATE_PLAYING : GST_STATE_PAUSED;
+    if (st == GST_STATE_PLAYING) enable_amp(model.amp_enable_paths);
+    if (st == GST_STATE_PLAYING) unmute_speaker(model.spk_mute_ctl);
     g.gst_element_set_state(c.pipe, st);
     if (!c.want_play)
       set_state(c, PlayState::PAUSED);
@@ -539,7 +545,7 @@ struct Player::Impl {
   }
 };
 
-Player::Player(Loop &loop) : impl_(new Impl(loop)) {}
+Player::Player(Loop &loop, const Model &model) : impl_(new Impl(loop, model)) {}
 
 Player::~Player() {
   if (impl_->ok) {
@@ -586,7 +592,8 @@ bool Player::init() {
     c.id = Channel(i);
     gp perr = nullptr;
     char desc[160];
-    snprintf(desc, sizeof desc, "playbin name=ch%d audio-sink=\"alsasink device=speakers\"", i);
+    snprintf(desc, sizeof desc, "playbin name=ch%d audio-sink=\"alsasink device=%s\"", i,
+             d.model.playback_sink.c_str());
     c.pipe = g.gst_parse_launch(desc, &perr);
     if (!c.pipe) {
       LOGE("player: cannot create playbin: %s", gerror_message(perr));
@@ -749,11 +756,16 @@ float Mixer::from_raw(int raw) const {
   return 1.0f;
 }
 
-float Mixer::from_legacy(float v) const { return from_raw(legacy_raw(v)); }
+float Mixer::from_legacy(float v) const {
+  return model_.software_volume ? std::min(1.0f, std::max(0.0f, v)) : from_raw(legacy_raw(v));
+}
 
-float Mixer::to_legacy(float v) const { return legacy_volume(to_raw(v)); }
+float Mixer::to_legacy(float v) const {
+  return model_.software_volume ? std::min(1.0f, std::max(0.0f, v)) : legacy_volume(to_raw(v));
+}
 
 bool Mixer::open() {
+  if (model_.software_volume) return true;  // Controller applies the master to the player gains
   snd_ctl_t *ctl = nullptr;
   int rc = snd_ctl_open(&ctl, "hw:0", 0);
   if (rc < 0) {
@@ -801,6 +813,7 @@ void Mixer::set_muted(bool m) {
 void Mixer::apply() {
   auto *ctl = static_cast<snd_ctl_t *>(ctl_);
   if (!ctl) return;
+  if (model_.software_volume) return;
   int raw = muted_ ? 0 : to_raw(volume_);
   snd_ctl_elem_value_t *val;
   snd_ctl_elem_value_alloca(&val);

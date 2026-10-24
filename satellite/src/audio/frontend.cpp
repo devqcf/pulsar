@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <condition_variable>
+#include <cstdint>
 #include <cstring>
 
 #include "audio/spectrum.h"
@@ -282,6 +283,12 @@ void AudioFrontend::run() {
   const size_t nmic = mic_ch.size(), nspk = spk_ch.size();
   const size_t fifo_max = size_t(model_.capture_rate) * nch;  // 1 s of audio
   const size_t chunk_samples = period * nch;
+  const unsigned bits = model_.capture_bits;
+  if (bits != 16 && bits != 32) {
+    LOGE("capture: unsupported sample width %u bits", bits);
+    return;
+  }
+  const snd_pcm_format_t fmt = bits == 32 ? SND_PCM_FORMAT_S32_LE : SND_PCM_FORMAT_S16_LE;
 
   std::mutex fifo_mu;
   std::condition_variable fifo_cv;
@@ -311,7 +318,7 @@ void AudioFrontend::run() {
       snd_pcm_hw_params_alloca(&hw);
       if ((err = snd_pcm_hw_params_any(pcm, hw)) < 0) return fail("hw_params_any", err);
       if ((err = snd_pcm_hw_params_set_access(pcm, hw, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0) return fail("set_access", err);
-      if ((err = snd_pcm_hw_params_set_format(pcm, hw, SND_PCM_FORMAT_S16_LE)) < 0) return fail("set_format", err);
+      if ((err = snd_pcm_hw_params_set_format(pcm, hw, fmt)) < 0) return fail("set_format", err);
       if ((err = snd_pcm_hw_params_set_channels(pcm, hw, nch)) < 0) return fail("set_channels", err);
       unsigned rate = model_.capture_rate;
       if ((err = alsa::hw_params_set_rate_near(pcm, hw, &rate, nullptr)) < 0) return fail("set_rate_near", err);
@@ -323,19 +330,21 @@ void AudioFrontend::run() {
       if ((err = alsa::hw_params_set_period_size_near(pcm, hw, &per, nullptr)) < 0) return fail("set_period_size_near", err);
       if ((err = alsa::hw_params_set_buffer_size_near(pcm, hw, &buf)) < 0) return fail("set_buffer_size_near", err);
       if ((err = snd_pcm_hw_params(pcm, hw)) < 0) return fail("snd_pcm_hw_params", err);
-      LOGI("capture %s: %u Hz, %u ch, period %lu, buffer %lu", dev, rate, nch, (unsigned long)per,
-           (unsigned long)buf);
+      LOGI("capture %s: %u Hz, %u ch, %u bits, period %lu, buffer %lu", dev, rate, nch, bits,
+           (unsigned long)per, (unsigned long)buf);
       hw_period = std::min<snd_pcm_uframes_t>(per, period);
       return true;
     };
-    std::vector<int16_t> in(period * nch);
+    std::vector<int16_t> in16(period * nch);
+    std::vector<int32_t> in32(period * nch);
     while (running_) {
       if (!pcm && !open_pcm()) {
         std::unique_lock<std::mutex> lk(stop_mu_);
         stop_cv_.wait_for(lk, std::chrono::seconds(2), [this] { return !running_.load(); });
         continue;
       }
-      snd_pcm_sframes_t n = snd_pcm_readi(pcm, in.data(), hw_period);
+      void *in = bits == 32 ? static_cast<void *>(in32.data()) : static_cast<void *>(in16.data());
+      snd_pcm_sframes_t n = snd_pcm_readi(pcm, in, hw_period);
       if (n == -EAGAIN) {
         int w = snd_pcm_wait(pcm, 200);
         if (w >= 0) continue;  // ready, or timeout (re-checks running_)
@@ -356,7 +365,13 @@ void AudioFrontend::run() {
         continue;
       }
       std::lock_guard<std::mutex> lk(fifo_mu);
-      fifo.insert(fifo.end(), in.begin(), in.begin() + n * nch);
+      if (bits == 32) {
+        // The Mini's capture only offers S32_LE. The VQE/spotter path is int16-based, so drop the
+        // low half of each sample (the hardware delivers a left-justified 24-bit value).
+        for (size_t k = 0; k < size_t(n) * nch; k++) fifo.push_back(int16_t(uint16_t(uint32_t(in32[k]) >> 16)));
+      } else {
+        fifo.insert(fifo.end(), in16.begin(), in16.begin() + n * nch);
+      }
       if (fifo.size() > fifo_max) {
         LOGW("capture: processing behind, dropping %zu frames", (fifo.size() - fifo_max) / nch);
         fifo.erase(fifo.begin(), fifo.end() - fifo_max);

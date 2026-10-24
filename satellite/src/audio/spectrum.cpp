@@ -21,13 +21,21 @@ float to_db(float p) { return 10.f * std::log10(p + 1e-12f); }
 
 SpectrumAnalyzer::SpectrumAnalyzer(unsigned rate, size_t chunk_frames) {
   reset();
-  if (rate == 0 || rate % 16000 != 0 || chunk_frames / (rate / 16000) != kN ||
-      chunk_frames % (rate / 16000) != 0)
-    return;
-  decim_ = rate / 16000;
-  for (size_t i = 0; i < kN; i++) window_[i] = 0.5f - 0.5f * std::cos(2 * kPi * i / kN);
-  for (size_t k = 0; k < kN / 2; k++) twiddle_[k] = std::polar(1.f, -2 * kPi * k / kN);
-  const float bin_hz = 16000.f / kN;
+  if (rate == 0 || rate % 16000 != 0) return;
+  const size_t decim = rate / 16000;
+  if (chunk_frames % decim != 0) return;
+  const size_t n = chunk_frames / decim;
+  // The Midi and Lite 2 deliver 512 samples at 16 kHz per VQE chunk; the Mini's 48 kHz VQE
+  // chunk is 768 frames, i.e. 256 samples at 16 kHz. Both fit the same radix-2 analyser.
+  if (n != 256 && n != 512) return;
+  n_ = n;
+  decim_ = decim;
+  window_.resize(n_);
+  twiddle_.resize(n_ / 2);
+  buf_.assign(n_, {});
+  for (size_t i = 0; i < n_; i++) window_[i] = 0.5f - 0.5f * std::cos(2 * kPi * i / n_);
+  for (size_t k = 0; k < n_ / 2; k++) twiddle_[k] = std::polar(1.f, -2 * kPi * k / n_);
+  const float bin_hz = 16000.f / n_;
   for (size_t b = 0; b < 8; b++) {
     float lo = 40.f * std::pow(7600.f / 40.f, b / 8.f), hi = 40.f * std::pow(7600.f / 40.f, (b + 1) / 8.f);
     lo_[b] = size_t(std::ceil(lo / bin_hz));
@@ -44,7 +52,7 @@ void SpectrumAnalyzer::reset() {
 bool SpectrumAnalyzer::process(const float *spk, size_t nspk, MusicFrame &out) {
   if (!decim_ || nspk == 0) return false;
   const float norm = 1.f / float(decim_ * nspk);
-  for (size_t i = 0; i < kN; i++) {
+  for (size_t i = 0; i < n_; i++) {
     const float *p = spk + i * decim_ * nspk;
     float s = 0;
     for (size_t j = 0; j < decim_ * nspk; j++) s += p[j];
@@ -52,15 +60,15 @@ bool SpectrumAnalyzer::process(const float *spk, size_t nspk, MusicFrame &out) {
   }
 
   // In-place iterative radix-2 FFT.
-  for (size_t i = 1, j = 0; i < kN; i++) {
-    size_t bit = kN >> 1;
+  for (size_t i = 1, j = 0; i < n_; i++) {
+    size_t bit = n_ >> 1;
     for (; j & bit; bit >>= 1) j ^= bit;
     j ^= bit;
     if (i < j) std::swap(buf_[i], buf_[j]);
   }
-  for (size_t len = 2; len <= kN; len <<= 1) {
-    const size_t step = kN / len;
-    for (size_t i = 0; i < kN; i += len)
+  for (size_t len = 2; len <= n_; len <<= 1) {
+    const size_t step = n_ / len;
+    for (size_t i = 0; i < n_; i += len)
       for (size_t k = 0; k < len / 2; k++) {
         std::complex<float> u = buf_[i + k], v = buf_[i + k + len / 2] * twiddle_[k * step];
         buf_[i + k] = u + v;
@@ -69,7 +77,7 @@ bool SpectrumAnalyzer::process(const float *spk, size_t nspk, MusicFrame &out) {
   }
 
   // A full-scale sine through the Hann window peaks at N/4: that is 0 dB.
-  const float scale = 16.f / float(kN * kN);
+  const float scale = 16.f / float(n_ * n_);
   std::array<float, 8> power{};
   float total = 0, max_db = kFloorDb;
   for (size_t b = 0; b < 8; b++) {

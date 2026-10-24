@@ -5,13 +5,14 @@
 // Threads: the library's protocol task and sync (decode) task run on their own threads; its
 // "main loop" (SendspinClient::loop()) is driven by a cs::Loop timer, so every hook below and every
 // public method runs on the cs::Loop thread. Decoded PCM goes straight to a dedicated ALSA
-// playback handle on PCM "speakers" (dmix, mixed with the GStreamer channels) from the sync task.
+// playback handle on cfg.pcm ("speakers" dmix; mixed with the GStreamer channels) from the sync task.
 #pragma once
 
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "core/loop.h"
 
@@ -26,6 +27,9 @@ struct SendspinConfig {
   std::string software_version;
   std::string mac;        // "aa:bb:cc:dd:ee:ff"
   std::string state_dir;  // identity/pairing persistence directory
+  std::string pcm = "speakers";  // ALSA playback device (dmix); Mini uses its own dmix
+  std::string spk_mute_ctl;      // ALSA control to unmute before opening pcm (Mini "SPK mute")
+  std::vector<std::string> amp_enable_paths;  // sysfs amplifier gates to enable before opening pcm
   uint16_t port = 8928;
 };
 
