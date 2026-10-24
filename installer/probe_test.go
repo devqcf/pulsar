@@ -2,6 +2,15 @@ package main
 
 import "testing"
 
+func TestMiniModel(t *testing.T) {
+	if got := modelName("yandexmini"); got != "Yandex Station Mini" {
+		t.Fatalf("modelName(yandexmini) = %q", got)
+	}
+	if hasZigbee("yandexmini") {
+		t.Fatal("Mini must not install Zigbee firmware")
+	}
+}
+
 func TestArchOfUsesAvailableUserlandABI(t *testing.T) {
 	tests := []struct {
 		name, code string
@@ -12,6 +21,8 @@ func TestArchOfUsesAvailableUserlandABI(t *testing.T) {
 		{"cucumber falls back to armhf userspace", "cucumber", []string{"armhf"}, "armhf"},
 		{"plum stays armhf", "plum", []string{"aarch64", "armhf"}, "armhf"},
 		{"plum without its loader is skipped", "plum", []string{"aarch64"}, ""},
+		{"mini stays armhf", "yandexmini", []string{"aarch64", "armhf"}, "armhf"},
+		{"mini without its loader is skipped", "yandexmini", []string{"aarch64"}, ""},
 		{"no compatible loader", "cucumber", nil, ""},
 		{"unsupported model", "unknown", []string{"aarch64", "armhf"}, ""},
 	}

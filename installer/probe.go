@@ -15,6 +15,8 @@ func modelName(code string) string {
 		return "Yandex Station Midi"
 	case "plum":
 		return "Yandex Station Lite 2"
+	case "yandexmini":
+		return "Yandex Station Mini"
 	}
 	return ""
 }
@@ -23,14 +25,17 @@ func modelName(code string) string {
 // supported. The installed binary is build/<arch>/pulsar for the first ABI whose dynamic loader
 // is on the station. A second ABI is only for a userspace actually seen on that model: some Midi
 // images run a 32-bit userspace on the 64-bit kernel (#13) and need the armhf build (its ALSA
-// ABI is the one in audio/alsa_abi.h, #14). Lite 2 stays armhf-only: no 64-bit plum firmware has
-// been seen, and the aarch64 binary needs glibc 2.34 — on a miss it would crash-loop back to
+// ABI is the one in audio/alsa_abi.h, #14). Lite 2 and Mini stay armhf-only: no 64-bit firmware
+// has been seen, and the aarch64 binary needs glibc 2.34 — on a miss it would crash-loop back to
 // the Yandex stack (no .prev on a first install).
 func abis(code string) []string {
 	switch code {
 	case "cucumber":
 		return []string{"aarch64", "armhf"}
 	case "plum":
+		return []string{"armhf"}
+	case "yandexmini":
+		// First-generation Mini: 32-bit armhf userland (glibc 2.23) on an aarch64 kernel.
 		return []string{"armhf"}
 	}
 	return nil
@@ -52,8 +57,8 @@ func archOf(code string, loaders []string) string {
 func hasZigbee(code string) bool { return code == "cucumber" }
 
 type station struct {
-	serial, arch string
-	zigbee       bool
+	serial, arch, code string
+	zigbee             bool
 }
 
 // found: installable stations, in the order printed by probe.
@@ -76,11 +81,22 @@ func probe(s string, ours bool) {
 		return
 	}
 	m := codename.FindStringSubmatch(compat)
-	if m == nil || m[1] == "" {
+	code := ""
+	if m != nil {
+		code = m[1]
+	}
+	if code == "" {
+		// The first-generation Mini has no yandex,* compatible entry; its board id is the
+		// stable marker (the daemon uses the same file).
+		dtid, _ := sh(s, `tr -d '\0' </proc/device-tree/amlogic-dt-id`)
+		if dtid == "axg_s420_v03" {
+			code = "yandexmini"
+		}
+	}
+	if code == "" {
 		skip("not a Yandex Station")
 		return
 	}
-	code := m[1]
 	name := modelName(code)
 	if name == "" {
 		name = "unknown Yandex device"
@@ -114,7 +130,7 @@ func probe(s string, ours bool) {
 	} else {
 		state = "stock Yandex"
 	}
-	found = append(found, station{s, arch, hasZigbee(code)})
+	found = append(found, station{serial: s, arch: arch, code: code, zigbee: hasZigbee(code)})
 	note := ""
 	if arch != abis(code)[0] {
 		note = ", " + arch + " build"
