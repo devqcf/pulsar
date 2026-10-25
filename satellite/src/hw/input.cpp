@@ -1,7 +1,8 @@
 // Buttons via evdev (devices matched by name in /proc/bus/input/devices, names per Model).
 // Station Midi: touch keys "awinic_sar", mute switch "mute"; Station Lite 2: touch keys "aw9610x",
-// mute switch "gpio-keys"; Station Mini: one "adc_keypad" with volume/mute keys and no switch
-// (its devicetree also names a TALK pad, but the button is not fitted).
+// mute switch "gpio-keys"; Station Mini: one "adc_keypad" with the volume keys and no switch (its
+// devicetree also names TALK/MUTE pads, but neither button is wired to the keypad driver; the side
+// MUTE button, when fitted, cuts microphone power in hardware).
 // The Midi/Lite 2 use the same key codes and switch:
 //
 // touch keys (capacitive, EV_KEY only; Midi KEY bitmap "40 0 0 0 0 0 0 0 c000000000000 0"):
@@ -11,7 +12,7 @@
 // mute switch (gpio-keys, KEY bitmap bit 113 KEY_MUTE, SW bitmap 0x4000 = SW_MUTE_DEVICE (14)):
 //   the hardware microphone mute slider/toggle; SW_MUTE_DEVICE=1 means muted. Its KEY_MUTE
 //   press/release events are ignored, the switch state is authoritative (initial value via
-//   EVIOCGSW). The Mini has no switch but a momentary KEY_MUTE on its keypad: each press toggles
+//   EVIOCGSW). A model may instead expose a momentary KEY_MUTE in mute_key: each press toggles
 //   the same software mute state.
 // ACTION: SHORT on release before 800 ms, LONG as soon as it has been held for 800 ms.
 // VOLUME_*: SHORT on press, auto-repeated every 200 ms after being held for 500 ms, for at most 10 s.

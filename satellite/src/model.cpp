@@ -70,8 +70,8 @@ Model mini() {
   m.ring = {6, 0, "", "", "", "", "/dev/i2c-0", 0x3c};
   m.keys_input = "adc_keypad";
   m.mute_input = "";
-  m.action_key = 0;   // no TALK button on this model (the keypad's talk pad is not fitted)
-  m.mute_key = 113;   // KEY_MUTE on the same keypad, no SW_MUTE_DEVICE switch
+  m.action_key = 0;  // no TALK button on this model (the keypad's talk pad is not fitted)
+  m.mute_key = 0;    // the side MUTE button (if fitted) cuts mic power in hardware; no evdev event
   // This fork carries the Mini support; upstream armhf releases are built for glibc 2.30.
   m.update_repo = "devqcf/pulsar";
   m.has_light_sensor = false;
