@@ -90,6 +90,22 @@ cat /data/pulsar/state.conf
 `input devices unavailable` и ошибок I2C/ALSA. В HA должны появиться только сущности из списка
 выше; часов, Lux, Zigbee и Case color быть не должно.
 
+## Режим без интернета
+
+Если станция должна работать только в LAN, можно запретить ей маршрут по умолчанию. На проверенной
+прошивке это делается через `dhcpcd` (после перезагрузки настройка сохраняется):
+
+```sh
+cp /etc/dhcpcd.conf /data/pulsar/dhcpcd.conf.bak
+printf '\nnogateway\n' >> /etc/dhcpcd.conf
+busybox route del default
+```
+
+После этого станция не ходит в интернет, но остаются доступны HA, SSH, ADB, Sendspin и mDNS в
+пределах `192.168.51.0/24`. Вернуть маршрут: удалить `nogateway` из `/etc/dhcpcd.conf` и
+перезагрузиться (или добавить `default gw` вручную). Проверка обновлений при этом ожидаемо
+заканчивается `Network is unreachable`; обновляться нужно вручную из архива форка.
+
 ## Откат
 
 - Установщик при замене бинарника сохраняет предыдущий в `/data/pulsar/pulsar.prev`; `supervise.sh`
