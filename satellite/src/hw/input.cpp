@@ -1,6 +1,7 @@
 // Buttons via evdev (devices matched by name in /proc/bus/input/devices, names per Model).
 // Station Midi: touch keys "awinic_sar", mute switch "mute"; Station Lite 2: touch keys "aw9610x",
-// mute switch "gpio-keys"; Station Mini: one "adc_keypad" with talk/volume/mute keys and no switch.
+// mute switch "gpio-keys"; Station Mini: one "adc_keypad" with volume/mute keys and no switch
+// (its devicetree also names a TALK pad, but the button is not fitted).
 // The Midi/Lite 2 use the same key codes and switch:
 //
 // touch keys (capacitive, EV_KEY only; Midi KEY bitmap "40 0 0 0 0 0 0 0 c000000000000 0"):
@@ -122,7 +123,7 @@ struct Input::Impl {
   }
 
   void on_key(int code, int value) {
-    if (code == model.action_key) {
+    if (model.action_key && code == model.action_key) {
       if (value == 1 && !action_down) {
         action_down = Loop::now_ms();
         action_long_sent = false;
@@ -212,7 +213,7 @@ struct Input::Impl {
       release_all();
       return;
     }
-    if (action_down && !test_bit(keys, model.action_key)) on_key(model.action_key, 0);
+    if (model.action_key && action_down && !test_bit(keys, model.action_key)) on_key(model.action_key, 0);
     if (repeat_code && !test_bit(keys, repeat_code)) on_key(repeat_code, 0);
   }
 

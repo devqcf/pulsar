@@ -1429,7 +1429,9 @@ struct ApiServer::Impl {
       entity_head(w, "button", K_EVENT_BUTTON, "Button");
       w.str(5, "mdi:gesture-tap-button");
       w.str(8, "button");
-      for (const char *t : {"action", "action_long", "volume_up", "volume_down"}) w.str(9, t, true);
+      if (cfg.has_action)
+        for (const char *t : {"action", "action_long"}) w.str(9, t, true);
+      for (const char *t : {"volume_up", "volume_down"}) w.str(9, t, true);
       send_msg(c, LIST_EVENT, w);
     }
     {

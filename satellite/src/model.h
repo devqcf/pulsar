@@ -16,9 +16,11 @@ struct Model {
   std::string model_name;
 
   // Capture: interleaved samples from capture_pcm, capture_bits per channel (S16_LE or S32_LE);
-  // VQE gets mic_channels / spk_channels.
+  // VQE gets mic_channels / spk_channels. For S32_LE, capture_shift low bits are discarded when
+  // reducing to the VQE's 16-bit input: 16 for a full 32-bit sample, 8 for the Mini's stream,
+  // whose 24 significant bits are right-justified.
   std::string capture_pcm;
-  unsigned capture_rate = 0, capture_channels = 0, capture_bits = 16;
+  unsigned capture_rate = 0, capture_channels = 0, capture_bits = 16, capture_shift = 16;
   std::vector<unsigned> mic_channels, spk_channels;
   std::string vqe_preset;
 
@@ -49,7 +51,7 @@ struct Model {
   bool clock_chip_current = true;
 
   std::string keys_input, mute_input;  // evdev device names; empty: absent
-  int action_key = 582;                // KEY_VOICECOMMAND; the Mini reports KEY_POWER (116)
+  int action_key = 582;                // KEY_VOICECOMMAND; 0: no action button
   int mute_key = 0;                    // KEY_MUTE on a keypad without a SW_MUTE_DEVICE switch
   bool has_light_sensor = true;        // ltr308als01 IIO ambient light sensor
   std::string error_sound;             // relative to /system/vendor/quasar/sounds/

@@ -184,6 +184,7 @@ bool Controller::start() {
   cfg.has_light_sensor = model_.has_light_sensor;
   cfg.has_hw_mic_mute = !model_.mute_input.empty() || model_.mute_key != 0;
   cfg.has_buttons = !model_.keys_input.empty();
+  cfg.has_action = model_.action_key != 0;
   cfg.case_colors = {"None"};
   const auto case_colors = Leds::case_colors();
   cfg.case_colors.insert(cfg.case_colors.end(), case_colors.begin(), case_colors.end());

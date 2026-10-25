@@ -62,6 +62,7 @@ Model mini() {
   m.capture_rate = 48000;
   m.capture_channels = 8;
   m.capture_bits = 32;
+  m.capture_shift = 8;  // right-justified 24-bit samples: keep the top 16 bits as int16
   m.mic_channels = {0, 1, 2, 3};
   m.spk_channels = {6, 7};
   m.vqe_preset = "yandexmini";
@@ -69,8 +70,8 @@ Model mini() {
   m.ring = {6, 0, "", "", "", "", "/dev/i2c-0", 0x3c};
   m.keys_input = "adc_keypad";
   m.mute_input = "";
-  m.action_key = 116;  // the "talk" key: KEY_POWER in the kernel, maind's talk button
-  m.mute_key = 113;    // KEY_MUTE on the same keypad, no SW_MUTE_DEVICE switch
+  m.action_key = 0;   // no TALK button on this model (the keypad's talk pad is not fitted)
+  m.mute_key = 113;   // KEY_MUTE on the same keypad, no SW_MUTE_DEVICE switch
   // This fork carries the Mini support; upstream armhf releases are built for glibc 2.30.
   m.update_repo = "devqcf/pulsar";
   m.has_light_sensor = false;

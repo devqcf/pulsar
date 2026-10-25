@@ -178,6 +178,7 @@ struct ApiConfig {
   bool has_light_sensor = true;                   // ltr308als01 illuminance entity
   bool has_hw_mic_mute = true;                    // hardware mic-mute switch input
   bool has_buttons = true;                        // physical keys: Button event entity
+  bool has_action = true;                         // action button: action/action_long event types
   // File holding the Noise encryption key (base64 of 32 bytes, as in ESPHome's api: encryption:
   // key). Missing/empty file: plaintext (and all-zeros-key provisioning). HA may set or rotate it
   // with NoiseEncryptionSetKeyRequest. Empty path: encryption unsupported.

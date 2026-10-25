@@ -366,9 +366,13 @@ void AudioFrontend::run() {
       }
       std::lock_guard<std::mutex> lk(fifo_mu);
       if (bits == 32) {
-        // The Mini's capture only offers S32_LE. The VQE/spotter path is int16-based, so drop the
-        // low half of each sample (the hardware delivers a left-justified 24-bit value).
-        for (size_t k = 0; k < size_t(n) * nch; k++) fifo.push_back(int16_t(uint16_t(uint32_t(in32[k]) >> 16)));
+        // The VQE/spotter path is int16-based. The Mini's capture offers S32_LE but carries a
+        // right-justified 24-bit sample, so discard the 8 sign-extension bits rather than the low
+        // half: the latter kept only 7 audio bits and made far-field speech nearly unusable.
+        for (size_t k = 0; k < size_t(n) * nch; k++) {
+          int32_t v = in32[k] >> model_.capture_shift;
+          fifo.push_back(int16_t(std::clamp<int32_t>(v, -32768, 32767)));
+        }
       } else {
         fifo.insert(fifo.end(), in16.begin(), in16.begin() + n * nch);
       }
