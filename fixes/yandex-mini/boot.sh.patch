@@ -1,0 +1,10 @@
+--- a/boot.sh
++++ b/boot.sh
+@@ -30,4 +30,7 @@
+   i=$((i + 1))
+ done
+ /system/vendor/quasar/q stop >/dev/null 2>&1
++
++# Start amp-gate keep-alive (Yandex Mini 1st-gen firmware resets amp_table on playback trigger)
++[ -f "$D/enabled" ] && /data/pulsar/amp_keep.sh &
+ exec setsid "$D/supervise.sh" </dev/null >/dev/null 2>&1

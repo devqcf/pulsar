@@ -1,0 +1,14 @@
+--- a/asound.conf
++++ b/asound.conf
+@@ -20,8 +20,12 @@ pcm.minidmix {
+     }
+ }
+ 
+ pcm.mini {
+     type plug
+-    slave.pcm "minidmix"
++    slave {
++        pcm "minidmix"
++        rate 48000
++    }
+ }
