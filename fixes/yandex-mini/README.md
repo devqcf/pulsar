@@ -72,6 +72,7 @@ MA uses its own internal volume control. Restart MA afterwards.
 | `boot.sh.patch` | Adds the guarded `amp_keep.sh` auto-start to `/data/pulsar/boot.sh`. |
 | `state.conf.patch` | Bumps volume `0.1` -> `0.5` (0.1 was too quiet on this unit). |
 | `ma_settings_patch.py` | Removes the dead `volume_control` override from Music Assistant. |
+| `quasar-restore.sh` | Rollback: return the station to the stock Yandex (quasar) stack and remove pulsar's boot autostart. |
 
 ## Installation
 
@@ -92,6 +93,29 @@ cat /sys/class/tdm_state/amp_table        # must be 1
 pidof amp_keep.sh                          # must be running
 grep -E '^volume|^muted' /data/pulsar/state.conf
 ```
+
+## Rollback — back to the stock Yandex (quasar) stack
+
+`quasar-restore.sh` undoes everything pulsar-related and returns the station to the stock
+Yandex assistant. It:
+
+1. stops the amplifier keep-alive (`amp_keep.sh`);
+2. stops pulsar and its supervisor (via `/data/pulsar/ctl.sh disable`);
+3. removes pulsar's boot autostart (`/etc/init.d/S99zpulsar`) — but keeps a dropbear/SSH line
+   inside it if an older installer put one there (SSH autostart can also live in the separate
+   `/etc/init.d/S99zdropbear`, which is never touched);
+4. ensures quasar is running now and at boot (re-creates the `S99onboot.sh` symlink if missing,
+   then `q start`).
+
+```sh
+/data/pulsar/quasar-restore.sh            # rollback, keep pulsar files
+/data/pulsar/quasar-restore.sh --dry-run  # show what would be done, change nothing
+/data/pulsar/quasar-restore.sh --purge    # rollback AND delete /data/pulsar
+```
+
+Without `--purge`, pulsar is only disabled: `/data/pulsar/ctl.sh enable` brings it back.
+Repeat the note: this turns **off** the pulsar/ESPHome/Music-Assistant path and turns the stock
+Yandex assistant **on** again.
 
 ## Known limitations / separate bugs
 
